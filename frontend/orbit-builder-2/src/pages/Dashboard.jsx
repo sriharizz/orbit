@@ -1,10 +1,7 @@
-// src/pages/Dashboard.jsx
 import React, { useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppContext } from '../context/AppContext';
 import { BookOpen, Lock, Server, Cloud } from 'lucide-react';
-import DeepSpace from '../components/DeepSpace';
-import ShootingStar from '../components/ShootingStar';
 
 const Dashboard = () => {
     const { user } = useContext(AppContext);
@@ -13,14 +10,15 @@ const Dashboard = () => {
     // Safely parse name from context or localStorage fallback
     const displayUser = user?.name || (JSON.parse(localStorage.getItem('orbit_user')) || {})?.name || 'Developer';
 
-    const courses = [
+   const courses = [
         {
             id: 'dsa',
             title: 'Master Java DSA',
             description: 'Conquer Data Structures and Algorithms with Active Interception.',
             icon: <BookOpen className="w-8 h-8 text-cyan-400" />,
             isLocked: false,
-            path: '/curriculum/dsa'
+            // 🔥 MERGE POINT: Change this to '/arena' so it matches your App.jsx route!
+            path: '/arena' 
         },
         {
             id: 'backend',
@@ -41,11 +39,10 @@ const Dashboard = () => {
     ];
 
     return (
-        <div className="relative min-h-screen bg-black text-white p-8 font-sans overflow-hidden">
+        // 🔥 CHANGED 'bg-black' to 'bg-transparent' so the global App.jsx stars show through!
+        <div className="relative min-h-screen bg-transparent text-white p-8 font-sans overflow-hidden">
 
-            {/* Deep Space Background (Stars + Shooting Star) */}
-            <DeepSpace />
-            <ShootingStar />
+            {/* 🔥 DELETED DeepSpace and ShootingStar from here. They now live in App.jsx! */}
 
             {/* Dashboard Content */}
             <div className="relative z-10 max-w-6xl mx-auto">
