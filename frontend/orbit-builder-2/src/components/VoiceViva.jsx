@@ -3,13 +3,14 @@ import { Mic, Square, Send, Loader2, CheckCircle, XCircle, Rocket } from 'lucide
 import axios from 'axios';
 import { motion } from 'framer-motion';
 
-// 1. Accept the onComplete prop!
+import { verifyVivaAnswer } from '../api';
+
 const VoiceViva = ({ onComplete }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [isEvaluating, setIsEvaluating] = useState(false);
-  const [result, setResult] = useState(null); 
-  
+  const [result, setResult] = useState(null);
+
   const recognitionRef = useRef(null);
 
   useEffect(() => {
@@ -46,14 +47,17 @@ const VoiceViva = ({ onComplete }) => {
   const submitViva = async () => {
     setIsEvaluating(true);
     try {
-      const response = await axios.post('http://localhost:8000/api/submit', {
-        submission_type: "viva",
-        transcribed_text: transcript
+      // NOTE: studentId and checkpointId need to be passed down if VoiceViva is embedded. Providing defaults for now.
+      const response = await verifyVivaAnswer({
+        student_id: 'dev@company.com',
+        checkpoint_id: 'viva_fallback',
+        transcribed_text: transcript,
+        language_preference: 'english'
       });
 
       setResult({
-        passed: response.data.viva_passed,
-        feedback: response.data.feedback_text
+        passed: response.viva_passed,
+        feedback: response.feedback_text
       });
     } catch (error) {
       console.error("Viva submission failed:", error);
@@ -63,7 +67,7 @@ const VoiceViva = ({ onComplete }) => {
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       className="w-full max-w-4xl mx-auto mt-10 bg-slate-900 rounded-xl shadow-[0_0_40px_rgba(0,0,0,0.8)] border border-slate-700 p-8 flex flex-col items-center"
@@ -73,13 +77,12 @@ const VoiceViva = ({ onComplete }) => {
         <p className="text-slate-400">Explain the Time and Space Complexity of your optimized solution to clear the sector.</p>
       </div>
 
-      <button 
+      <button
         onClick={toggleRecording}
-        className={`relative w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300 shadow-2xl ${
-          isRecording 
-            ? 'bg-red-500 hover:bg-red-600 animate-pulse' 
+        className={`relative w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300 shadow-2xl ${isRecording
+            ? 'bg-red-500 hover:bg-red-600 animate-pulse'
             : 'bg-indigo-600 hover:bg-indigo-500'
-        }`}
+          }`}
       >
         {isRecording ? <Square className="w-10 h-10 text-white" /> : <Mic className="w-10 h-10 text-white" />}
         {isRecording && (
@@ -101,7 +104,7 @@ const VoiceViva = ({ onComplete }) => {
 
       <div className="w-full mt-6 flex flex-col items-center">
         {!result ? (
-          <button 
+          <button
             onClick={submitViva}
             disabled={!transcript || isRecording || isEvaluating}
             className="flex items-center gap-2 px-8 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white font-bold rounded transition-all uppercase tracking-wider text-sm shadow-[0_0_15px_rgba(5,150,105,0.4)]"
@@ -111,11 +114,10 @@ const VoiceViva = ({ onComplete }) => {
           </button>
         ) : (
           <div className="w-full flex flex-col items-center">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-              className={`w-full p-6 rounded-lg border-2 flex items-start gap-4 ${
-                result.passed ? 'bg-emerald-900/20 border-emerald-500' : 'bg-red-900/20 border-red-500'
-              }`}
+              className={`w-full p-6 rounded-lg border-2 flex items-start gap-4 ${result.passed ? 'bg-emerald-900/20 border-emerald-500' : 'bg-red-900/20 border-red-500'
+                }`}
             >
               {result.passed ? <CheckCircle className="w-8 h-8 text-emerald-400 flex-shrink-0" /> : <XCircle className="w-8 h-8 text-red-400 flex-shrink-0" />}
               <div>
@@ -128,7 +130,7 @@ const VoiceViva = ({ onComplete }) => {
 
             {/* 2. The Next Steps based on Pass/Fail */}
             {result.passed ? (
-              <button 
+              <button
                 onClick={onComplete} // <--- THIS TRIGGERS THE HYPERJUMP!
                 className="mt-8 flex items-center gap-3 px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded uppercase tracking-[0.2em] shadow-[0_0_30px_rgba(79,70,229,0.6)] hover:scale-105 transition-all"
               >
@@ -136,7 +138,7 @@ const VoiceViva = ({ onComplete }) => {
                 Initiate Hyperjump
               </button>
             ) : (
-              <button 
+              <button
                 onClick={() => { setResult(null); setTranscript(''); }}
                 className="mt-6 px-8 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded uppercase tracking-widest text-sm transition-all border border-slate-600"
               >

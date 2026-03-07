@@ -52,11 +52,11 @@ EXPECTED CONCEPT: {expected_concept}
 STUDENT CODE:
 {request.user_code}
 
-LANGUAGE PREFERENCE: {request.language_preference}
+LANGUAGE PREFERENCE: {request.language_preference}. If the language is "hinglish", you must write in the Latin alphabet (English characters), NOT in Devanagari script. Mix Hindi and English words naturally, but spell everything using English letters.
 
 Evaluate the student's code. Be strict and professional.
-- If the code is WRONG: explain exactly what is wrong. Do NOT give the answer. Push them to think.
-- If the code is CORRECT: say so clearly, then ask ONE sharp logical follow-up viva question.
+- If the code is WRONG: Act like a strict compiler. Point out the exact error or missing logic in 1 short sentence. Give ONE tiny hint, but NEVER reveal the correct code or answer. Let them struggle a bit.
+- If the code is CORRECT: say exactly "Correct! Your logic is perfect." and then ask ONE sharp logical follow-up viva question. Keep it extremely brief.
 
 Respond STRICTLY in this JSON format (no markdown, no extra text):
 {{
@@ -75,18 +75,16 @@ EXPECTED CONCEPT: {expected_concept}
 STUDENT CODE:
 {request.user_code}
 
-LANGUAGE PREFERENCE: {request.language_preference}
+LANGUAGE PREFERENCE: {request.language_preference}. If the language is "hinglish", you must write in the Latin alphabet (English characters), NOT in Devanagari script. Mix Hindi and English words naturally, but spell everything using English letters.
 
 Evaluate the code with empathy. Guide them, do not just give the answer.
 - Explain what they are doing wrong in simple terms.
-- Provide a Mermaid.js flowchart diagram that visualizes the correct algorithm.
-- End with an encouraging message.
+- If the code is CORRECT: say exactly "Great job! That's perfectly correct." Keep it under 10 words. Do not explain anything.
 
 Respond STRICTLY in this JSON format (no markdown, no extra text):
 {{
   "is_correct": true or false,
   "feedback_text": "your warm, helpful explanation in {request.language_preference}",
-  "mermaid_diagram": "graph TD\\n  A[Start] --> B[Your diagram here]",
   "viva_question": "your follow-up question if correct, else null"
 }}"""
 
@@ -97,10 +95,10 @@ def _build_viva_prompt(request: SubmitRequest) -> str:
 
 VIVA QUESTION ASKED: {request.viva_question}
 STUDENT'S SPOKEN ANSWER: {request.transcribed_text}
-LANGUAGE PREFERENCE: {request.language_preference}
+LANGUAGE PREFERENCE: {request.language_preference}. If the language is "hinglish", you must write in the Latin alphabet (English characters), NOT in Devanagari script. Mix Hindi and English words naturally, but spell everything using English letters.
 
 Evaluate whether the student genuinely understands the concept.
-{"Be strict. A vague or incomplete answer fails." if request.viva_attempt_count < MENTOR_VIVA_THRESHOLD else "Be supportive. If they show partial understanding, guide them to the full answer."}
+{"Evaluate fairly. Do NOT look for exact terminology. If the student demonstrates the core concept in their own words, they PASS (viva_passed: true). Only fail if the answer is completely wrong or blank." if request.viva_attempt_count < MENTOR_VIVA_THRESHOLD else "Be extremely supportive but do NOT give a free pass. If they say 'I don't know' or are completely wrong, you MUST FAIL them (viva_passed: false) and provide a clear hint. Only PASS them if their answer shows partial understanding."}
 
 Respond STRICTLY in this JSON format (no markdown, no extra text):
 {{
@@ -154,11 +152,23 @@ def route_request(request: SubmitRequest, expected_concept: str = "") -> Evaluat
 
     # VIVA PHASE
     if request.submission_type == "viva":
+        # 4. Escape hatch: The "Teach-Back" Method for Attempt 3+
+        if request.viva_attempt_count >= 3:
+            return EvaluationResponse(
+                checkpoint_id=request.checkpoint_id,
+                submission_type="viva",
+                persona_used="mentor",
+                viva_passed=False,
+                feedback_text=f"I appreciate your effort! The core concept here is: {expected_concept}. Now, to unlock the video, please type this explanation back to me in your own words so I know you've got it!",
+                video_can_resume=False,
+            )
+
         if USE_MOCK:
             result = _mock_viva_response(request)
         else:
             prompt = _build_viva_prompt(request)
-            result = call_bedrock(prompt)
+            # Call Bedrock WITHOUT Guardrails (too sensitive to short answers like "I don't know")
+            result = call_bedrock(prompt, use_guardrails=False)
 
         persona = "interrogator" if request.viva_attempt_count < MENTOR_VIVA_THRESHOLD else "mentor"
         return EvaluationResponse(

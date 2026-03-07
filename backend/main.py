@@ -6,7 +6,8 @@ from router import route_request
 import json
 
 with open("curriculum.json") as f:
-    data=json.load(f)
+    raw_data = json.load(f)
+    data = raw_data.get("curriculum", raw_data)
 
 app=FastAPI()
 
@@ -36,11 +37,12 @@ def get_curriculum(day_id:str):
 
 @app.post("/api/submit")
 def submit(request: SubmitRequest):
-    # Look up expected_concept from curriculum for this checkpoint
-    checkpoint_data = next(
-        (c for c in data.get("day_1", {}).get("checkpoints", [])
-         if c["checkpoint_id"] == request.checkpoint_id), {}
-    )
+    checkpoint_data = {}
+    for day in data.values():
+        found = next((c for c in day.get("checkpoints", []) if c["checkpoint_id"] == request.checkpoint_id), None)
+        if found:
+            checkpoint_data = found
+            break
     expected_concept = checkpoint_data.get("expected_concept", "")
     return route_request(request, expected_concept)
 

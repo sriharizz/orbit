@@ -1,81 +1,115 @@
-import React, { useState, useRef, useEffect } from 'react';
-import YouTube from 'react-youtube'; 
+import React, { useState, useRef, useEffect, useContext } from 'react';
+import YouTube from 'react-youtube';
 import SpaceTimeline from './SpaceTimeline';
-import CodeEditor from './CodeEditor'; 
+import CodeEditor from './CodeEditor';
 import { Maximize, Zap } from 'lucide-react';
 
 // 🔥 IMPORTED YOUR DEEP SPACE AND SHOOTING STARS
 import DeepSpace from './DeepSpace';
 import ShootingStar from './ShootingStar';
 
-const TOPICS = [
-  {
-    id: 0,
-    title: "Planet Arrays",
-    videoId: "NTHVTY6w2Co", 
-    checkpoints: [
-      { time: 15, title: "Mid-Lecture Array Challenge", isFinal: false },
-      { time: 45, title: "Final Array Challenge & Viva", isFinal: true }  
-    ]
-  },
-  {
-    id: 1,
-    title: "Planet Linked Lists",
-    videoId: "oAja8-Ulz6o",
-    checkpoints: [
-      { time: 20, title: "Node Creation Challenge", isFinal: false },
-      { time: 60, title: "Reversal Challenge & Viva", isFinal: true }
-    ]
-  },
-  {
-    id: 2,
-    title: "Planet Trees",
-    videoId: "-DzowlcaUmE",
-    checkpoints: [
-      { time: 25, title: "Binary Tree Traversal", isFinal: false },
-      { time: 70, title: "Depth-First Search & Viva", isFinal: true }
-    ]
-  }
-];
+import { getCurriculumByDay, getStudentProgress } from '../api';
+import { AppContext } from '../context/AppContext';
 
 export default function MainWorkspace() {
+  const { user } = useContext(AppContext);
+  const studentId = user?.email || (JSON.parse(localStorage.getItem('orbit_user')) || {}).email || 'dev@company.com';
+
+  const [topics, setTopics] = useState([]);
   const [currentTopicIndex, setCurrentTopicIndex] = useState(0);
-  
-  const [phase, setPhase] = useState('flying'); 
+
+  const [isLoading, setIsLoading] = useState(true);
+
+  const [phase, setPhase] = useState('flying');
   const [videoInterrupted, setVideoInterrupted] = useState(false);
   const [currentCheckpointIndex, setCurrentCheckpointIndex] = useState(0);
+
+  // TEMPORARY FIX: Clear localStorage so stale checkpoint IDs from old curriculum tests don't permanently skip the new ones
+  localStorage.removeItem('orbit_completed_cps');
+
+  const [completedCheckpoints, setCompletedCheckpoints] = useState(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('orbit_completed_cps') || '[]'));
+    } catch {
+      return new Set();
+    }
+  });
 
   const playerRef = useRef(null);
   const progressIntervalRef = useRef(null);
 
-  const isCourseComplete = currentTopicIndex >= TOPICS.length;
-
   useEffect(() => {
+    const loadCurriculum = async () => {
+      try {
+        const progressData = await getStudentProgress(studentId);
+
+        // Filter to only unlocked days, then fetch their curriculum mapping
+        const unlockedDays = progressData.days.filter(d => d.is_unlocked);
+
+        const fullTopics = await Promise.all(
+          unlockedDays.map(async (day, index) => {
+            const data = await getCurriculumByDay(day.day_id).catch(() => null);
+            if (!data || !data.checkpoints) return null;
+
+            const mappedCheckpoints = data.checkpoints.map((cp, idx) => ({
+              id: cp.checkpoint_id,
+              time: cp.timestamp_seconds,
+              title: cp.topic,
+              description: cp.context_summary,
+              template: cp.starter_code,
+              isFinal: idx === data.checkpoints.length - 1
+            }));
+
+            return {
+              id: index,
+              title: data.video_title,
+              videoId: data.video_id,
+              checkpoints: mappedCheckpoints
+            };
+          })
+        );
+
+        setTopics(fullTopics.filter(Boolean));
+      } catch (e) {
+        console.error("Failed to fetch curriculum", e);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadCurriculum();
+
     return () => clearInterval(progressIntervalRef.current);
-  }, []);
+  }, [studentId]);
+
+  const currentTopic = topics[currentTopicIndex];
+  const isCourseComplete = topics.length > 0 && currentTopicIndex >= topics.length;
 
   const handleArrival = () => {
     setPhase('video');
+    if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
+      playerRef.current.playVideo();
+    }
   };
 
   const startProgressTracker = (player) => {
     if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
 
     progressIntervalRef.current = setInterval(() => {
-      if (videoInterrupted) return;
-
-      const currentTopic = TOPICS[currentTopicIndex];
-      if (!currentTopic) return; 
+      if (videoInterrupted || !currentTopic) return;
 
       const currentTime = player.getCurrentTime();
-      const currentCheckpoint = currentTopic.checkpoints[currentCheckpointIndex];
 
-      if (currentCheckpoint && currentTime >= currentCheckpoint.time) {
-        player.pauseVideo(); 
+      const nextCpIndex = currentTopic.checkpoints.findIndex((cp) =>
+        !completedCheckpoints.has(cp.id) && currentTime >= cp.time
+      );
+
+      if (nextCpIndex !== -1) {
+        setCurrentCheckpointIndex(nextCpIndex);
+        player.pauseVideo();
         setVideoInterrupted(true);
-        clearInterval(progressIntervalRef.current); 
+        clearInterval(progressIntervalRef.current);
       }
-    }, 1000); 
+    }, 1000);
   };
 
   const onPlayerReady = (event) => {
@@ -104,24 +138,35 @@ export default function MainWorkspace() {
     if (document.exitFullscreen && document.fullscreenElement) {
       document.exitFullscreen().catch(e => console.log(e));
     }
-    
-    const currentTopic = TOPICS[currentTopicIndex];
-    
-    if (currentCheckpointIndex < currentTopic.checkpoints.length - 1) {
-      setCurrentCheckpointIndex(prev => prev + 1);
-      setPhase('video'); 
-      setVideoInterrupted(false);
-      
-      if (playerRef.current) {
-        playerRef.current.playVideo();
+
+    const currentCheckpoint = currentTopic.checkpoints[currentCheckpointIndex];
+
+    setCompletedCheckpoints(prev => {
+      const updated = new Set(prev);
+      updated.add(currentCheckpoint.id);
+      localStorage.setItem('orbit_completed_cps', JSON.stringify([...updated]));
+
+      const allCompleted = currentTopic.checkpoints.every(cp => updated.has(cp.id));
+
+      if (!allCompleted) {
+        setPhase('video');
+        setVideoInterrupted(false);
+        if (playerRef.current) {
+          playerRef.current.seekTo(currentCheckpoint.time + 2);
+          playerRef.current.playVideo();
+        }
+      } else {
+        setVideoInterrupted(false);
+        setPhase('flying');
+        setCurrentTopicIndex(prevTopic => prevTopic + 1);
       }
-    } else {
-      setVideoInterrupted(false);
-      setCurrentCheckpointIndex(0);
-      setPhase('flying'); 
-      setCurrentTopicIndex(prev => prev + 1); 
-    }
+      return updated;
+    });
   };
+
+  if (isLoading) {
+    return <div className="w-screen h-screen bg-black flex items-center justify-center text-cyan-400 font-mono">LOADING CURRICULUM DATA...</div>;
+  }
 
   if (isCourseComplete) {
     return (
@@ -142,42 +187,43 @@ export default function MainWorkspace() {
     );
   }
 
-  const currentTopic = TOPICS[currentTopicIndex];
 
   return (
     <div className="relative w-screen h-screen overflow-hidden text-white" style={{ background: 'transparent' }}>
-      
+
       <div className="absolute inset-0 z-[2]">
-        <SpaceTimeline 
-          currentTopicIndex={currentTopicIndex} 
-          isFlying={phase === 'flying'} 
-          onArrival={handleArrival} 
+        <SpaceTimeline
+          currentTopicIndex={currentTopicIndex}
+          isFlying={phase === 'flying'}
+          onArrival={handleArrival}
         />
       </div>
 
       <div className={`absolute inset-0 z-10 flex flex-col items-center justify-center transition-opacity duration-500 ${phase === 'video' ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-        
+
         <div className="relative w-full h-full overflow-hidden" style={{ background: 'transparent' }}>
-          
+
           <div className={`absolute inset-0 ${videoInterrupted ? 'opacity-0 pointer-events-none' : 'opacity-100 bg-black'} transition-opacity duration-300`}>
-            <YouTube 
-              videoId={currentTopic.videoId}
-              opts={{
-                width: '100%',
-                height: '100%',
-                playerVars: { autoplay: 0, modestbranding: 1, rel: 0, origin: typeof window !== 'undefined' ? window.location.origin : '' }
-              }}
-              className="absolute top-0 left-0 w-full h-full"
-              iframeClassName="w-full h-full"
-              onReady={onPlayerReady}
-              onStateChange={onPlayerStateChange}
-            />
+            {currentTopic && (
+              <YouTube
+                videoId={currentTopic.videoId}
+                opts={{
+                  width: '100%',
+                  height: '100%',
+                  playerVars: { autoplay: 0, modestbranding: 1, rel: 0, origin: typeof window !== 'undefined' ? window.location.origin : '' }
+                }}
+                className="absolute top-0 left-0 w-full h-full"
+                iframeClassName="w-full h-full"
+                onReady={onPlayerReady}
+                onStateChange={onPlayerStateChange}
+              />
+            )}
           </div>
 
           {videoInterrupted && (
             // 🔥 REMOVED THE BLUR, ADDED A SOLID BACKGROUND SO IT HIDES THE SPACESHIP COMPLETELY
             <div className="absolute inset-0 z-20 flex flex-col items-center justify-center text-center p-8 animate-in fade-in duration-500 overflow-hidden">
-              
+
               {/* 🔥 ADDED YOUR DEEP SPACE AND SHOOTING STAR HERE */}
               <div className="absolute inset-0 z-0 bg-[#020617]">
                 <DeepSpace />
@@ -190,23 +236,23 @@ export default function MainWorkspace() {
               <div className="relative z-30 flex flex-col items-center">
                 <div className="w-20 h-20 mb-6 flex items-center justify-center text-cyan-400 relative">
                   <div className="absolute inset-0 rounded-full bg-cyan-500/10 animate-pulse border border-cyan-500/30"></div>
-                  <Zap className="w-10 h-10 animate-pulse" strokeWidth={1.5}/>
+                  <Zap className="w-10 h-10 animate-pulse" strokeWidth={1.5} />
                 </div>
 
                 <h2 className="text-3xl md:text-5xl font-black uppercase tracking-[0.2em] mb-2 text-white">
                   Signal <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 to-indigo-400 animate-pulse">Intercepted</span>
                 </h2>
                 <h3 className="text-lg font-bold text-amber-400 mb-10 tracking-widest uppercase px-4 py-1.5 bg-amber-400/10 rounded-full border border-amber-400/20">
-                  {currentTopic.checkpoints[currentCheckpointIndex]?.title}
+                  {currentTopic?.checkpoints[currentCheckpointIndex]?.title}
                 </h3>
-                
+
                 <div className="max-w-md p-6 bg-[#1D2A35]/80 rounded-xl border border-[#38444D] mb-12 shadow-2xl">
-                   <p className="text-slate-300 mb-6 leading-relaxed text-sm">
-                     A planetary encryption protocol has been triggered. Transmission cannot resume until you bypass the security matrix in the secure terminal. Failure will result in signal loss.
-                   </p>
+                  <p className="text-slate-300 mb-6 leading-relaxed text-sm">
+                    A planetary encryption protocol has been triggered. Transmission cannot resume until you bypass the security matrix in the secure terminal. Failure will result in signal loss.
+                  </p>
                 </div>
 
-                <button 
+                <button
                   onClick={enterFullscreenIDE}
                   className="group flex items-center gap-3 bg-gradient-to-r from-cyan-600 to-indigo-600 text-white px-10 py-4 rounded font-bold text-lg hover:from-cyan-500 hover:to-indigo-500 transition-all shadow-[0_0_30px_rgba(34,211,238,0.3)] hover:shadow-[0_0_50px_rgba(34,211,238,0.5)] transform hover:scale-105"
                 >
@@ -218,20 +264,23 @@ export default function MainWorkspace() {
           )}
         </div>
       </div>
-      
+
       {phase === 'ide' && (
         <div className="fixed inset-0 z-[9999] bg-[#282A35] w-screen h-screen flex flex-col">
           <div className="w-full h-12 bg-[#15202B] border-b border-[#38444D] flex items-center px-4 justify-between shrink-0 shadow-md">
             <span className="text-sm font-semibold text-white tracking-wide flex items-center gap-2">
-              Orbit Secure Terminal <span className="text-[#A0AAB2] mx-2">|</span> {currentTopic.title}
+              Orbit Secure Terminal <span className="text-[#A0AAB2] mx-2">|</span> {currentTopic?.title}
             </span>
           </div>
           <div className="flex-grow relative overflow-hidden flex items-center justify-center">
-            <CodeEditor 
-              onComplete={handleIdeSuccess} 
-              requiresViva={currentTopic.checkpoints[currentCheckpointIndex]?.isFinal}
-              buttonText={currentTopic.checkpoints[currentCheckpointIndex]?.isFinal ? "Initiate Hyperjump" : "Resume Transmission"}
-            />
+            {currentTopic && (
+              <CodeEditor
+                onComplete={handleIdeSuccess}
+                buttonText="Resume Transmission"
+                checkpointId={currentTopic.checkpoints[currentCheckpointIndex]?.id}
+                questionData={currentTopic.checkpoints[currentCheckpointIndex]}
+              />
+            )}
           </div>
         </div>
       )}

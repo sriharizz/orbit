@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 
 // 🧠 Import BOTH Brains
 import { AppProvider } from './context/AppContext';
-import { MockOrbitProvider } from './context/OrbitContext';
+import { OrbitProvider } from './context/OrbitContext';
 
 // 📄 Import Pages
 import Onboarding from './pages/Onboarding';
@@ -19,8 +19,8 @@ export default function App() {
     // Wrap the app in Builder 1's Context
     <AppProvider>
       {/* Wrap the app in Builder 2's Context */}
-      <MockOrbitProvider>
-        
+      <OrbitProvider>
+
         <Router>
           {/* 🔥 THE MASTER BACKGROUND: Acts as the background for EVERY page */}
           <div className="fixed inset-0 z-0 bg-black overflow-hidden">
@@ -33,20 +33,20 @@ export default function App() {
             <Routes>
               {/* 1. Default route pushes them to the login screen */}
               <Route path="/" element={<Navigate to="/onboarding" replace />} />
-              
+
               {/* 2. The Login Screen */}
               <Route path="/onboarding" element={<Onboarding />} />
-              
+
               {/* 3. The Dashboard Screen */}
               <Route path="/dashboard" element={<Dashboard />} />
-              
+
               {/* 4. THE MERGE POINT: Jumps to your Spaceship */}
               <Route path="/arena" element={<MainWorkspace />} />
             </Routes>
           </div>
         </Router>
 
-      </MockOrbitProvider>
+      </OrbitProvider>
     </AppProvider>
   );
 }
