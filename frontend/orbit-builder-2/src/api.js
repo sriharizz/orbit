@@ -26,11 +26,20 @@ async function apiCall(endpoint, method = "GET", body = null) {
 
     try {
         const response = await fetch(`${BASE_URL}${endpoint}`, options);
-        const data = await response.json();
+
+        // Safely parse response — Lambda sometimes returns plain text on 500 errors
+        let data;
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+            data = await response.json();
+        } else {
+            const text = await response.text();
+            data = { detail: text || `Server error (${response.status})` };
+        }
 
         if (!response.ok) {
             console.error(`API Error (${response.status}):`, data);
-            throw new Error(data.detail || "Something went wrong in the backend");
+            throw new Error(data.detail || data.message || `Server error (${response.status})`);
         }
 
         return data;

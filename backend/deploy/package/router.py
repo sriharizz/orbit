@@ -368,7 +368,7 @@ def handle_get_viva(student_id: str, checkpoint_id: str, user_code: str, expecte
 def handle_verify_viva(request: VivaSubmitRequest) -> VivaResultResponse:
     """
     Grade the student's viva explanation.
-    Passes through Bedrock Guardrails to block prompt injection.
+    Every attempt goes through Bedrock AI for fair evaluation.
     """
     sid = request.student_id
     cid = request.checkpoint_id
@@ -380,20 +380,11 @@ def handle_verify_viva(request: VivaSubmitRequest) -> VivaResultResponse:
     session = db.get_session(sid, cid)
     viva_question = session.get("viva_question", "")
 
-    # 3. Pick persona
+    # 3. Pick persona based on attempt count
     persona = "strict_didi" if viva_attempt < MENTOR_VIVA_THRESHOLD else "mentor"
 
-    # 4. Escape hatch: The "Teach-Back" Method for Attempt 3+
-    if viva_attempt >= 3:
-        return VivaResultResponse(
-            checkpoint_id=cid,
-            persona_used="mentor",
-            viva_passed=False,
-            feedback_text=f"I appreciate your effort, {request.student_name}! The core concept here is: {expected_concept}. Now, to unlock the video, please type this explanation back to me in your own words so I know you've got it!",
-            video_can_resume=False,
-        )
-
-    # 5. Call Bedrock WITHOUT Guardrails (too sensitive to short answers like "I don't know")
+    # 4. Call Bedrock to evaluate the student's answer
+    #    The prompt already has built-in leniency for higher attempts
     prompt = _build_viva_grade_prompt(
         viva_question, request.transcribed_text, viva_attempt, request.language_preference, request.student_name
     )

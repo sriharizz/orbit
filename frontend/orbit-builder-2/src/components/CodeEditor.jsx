@@ -56,6 +56,7 @@ export default function CodeEditor({ onComplete, requiresViva = true, buttonText
 
   const [isRecording, setIsRecording] = useState(false);
   const recognitionRef = useRef(null);
+  const wantsRecordingRef = useRef(false);  // tracks user intent separately
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -67,6 +68,7 @@ export default function CodeEditor({ onComplete, requiresViva = true, buttonText
       recognitionRef.current = new SpeechRecognition();
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
+      recognitionRef.current.lang = 'en-IN';
 
       recognitionRef.current.onresult = (event) => {
         let currentTranscript = '';
@@ -77,14 +79,23 @@ export default function CodeEditor({ onComplete, requiresViva = true, buttonText
       };
 
       recognitionRef.current.onerror = (event) => {
-        console.error("Speech recognition error:", event.error);
-        if (event.error === 'network') {
-          alert("Network Error: Your browser or VPN is blocking the Google/Microsoft Speech-to-Text servers. Dictation is unavailable on this device configuration.");
+        if (event.error === 'network' || event.error === 'not-allowed') {
+          alert("Microphone access blocked. Please allow microphone permissions in your browser settings.");
+          wantsRecordingRef.current = false;
+          setIsRecording(false);
         }
-        setIsRecording(false);
       };
 
       recognitionRef.current.onend = () => {
+        if (wantsRecordingRef.current) {
+          try {
+            recognitionRef.current?.start();
+          } catch (err) {
+            wantsRecordingRef.current = false;
+            setIsRecording(false);
+          }
+          return;
+        }
         setIsRecording(false);
       };
     }
@@ -92,14 +103,17 @@ export default function CodeEditor({ onComplete, requiresViva = true, buttonText
 
   const toggleRecording = () => {
     if (isRecording) {
+      wantsRecordingRef.current = false;
       recognitionRef.current?.stop();
       setIsRecording(false);
     } else {
       setChatInput('');
       try {
+        wantsRecordingRef.current = true;
         recognitionRef.current?.start();
         setIsRecording(true);
       } catch (err) {
+        wantsRecordingRef.current = false;
         setIsRecording(false);
       }
     }
@@ -195,7 +209,8 @@ export default function CodeEditor({ onComplete, requiresViva = true, buttonText
           addLog("VIVA_SYSTEM", result.feedback_text, "viva");
         }
       } catch (err) {
-        addLog("SYSTEM", "Error verifying Viva Answer", "error");
+        console.error("VIVA ERROR FULL DETAILS:", err);
+        addLog("SYSTEM", `Error verifying Viva Answer: ${err.message}`, "error");
       }
     } else {
       // Mentor Doubt Routing
