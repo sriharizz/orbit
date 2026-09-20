@@ -6,9 +6,19 @@ __pycache__/
 # Virtual Environment
 backend/venv/
 
-# Environment Variables (AWS secrets)
+# Environment Variables & Secrets
 .env
-backend/.env
+.env*
+*.env
+**/.env*
+backend/.env*
+!.env.example
+!backend/.env.example
+
+# Deployment Archives & Artifacts
+*.zip
+backend/deploy/*.zip
+backend/lambda_function.zip
 
 # IDE
 .vscode/
